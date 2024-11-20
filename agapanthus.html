@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flora Model</title>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            width: 100vw; 
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block; 
+            width: 100%; 
+            height: 100%;
+        }
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 24px;
+            z-index: 1000;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading... <span id="progress">0%</span></div>
+    <div id="info">Use mouse/touch to rotate. Scroll/pinch to zoom.</div>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.154.0/build/three.module.js",
+            "three/examples/jsm/loaders/GLTFLoader": "https://unpkg.com/three@0.154.0/examples/jsm/loaders/GLTFLoader.js",
+            "three/examples/jsm/controls/OrbitControls": "https://unpkg.com/three@0.154.0/examples/jsm/controls/OrbitControls.js"
+        }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+        import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+
+        let scene, camera, renderer, raycaster, mouse;
+        let isTransitioning = false;
+        let currentHotspot = null;
+        let infoWindow;
+        let hotspots = [];
+        const DEFAULT_CAMERA_POSITION = new THREE.Vector3(2.02, 1.45, 1.28);
+        const DEFAULT_CAMERA_ROTATION = new THREE.Euler(-0.65, 0.53, 0.36);
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setClearColor(0x000000);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.body.appendChild(renderer.domElement);
+
+            camera.position.copy(DEFAULT_CAMERA_POSITION);
+            camera.rotation.copy(DEFAULT_CAMERA_ROTATION);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 10, 7.5);
+            scene.add(directionalLight);
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            loadModel();
+            createHotspots();
+            createInfoWindow();
+            animate();
+
+            // Add key listener for logging camera position
+            window.addEventListener('keydown', function(event) {
+                if (event.key === 'c' || event.key === 'C') {
+                    console.log('Camera Position:', {
+                        x: camera.position.x.toFixed(2),
+                        y: camera.position.y.toFixed(2),
+                        z: camera.position.z.toFixed(2)
+                    });
+                    console.log('Camera Rotation:', {
+                        x: camera.rotation.x.toFixed(2),
+                        y: camera.rotation.y.toFixed(2),
+                        z: camera.rotation.z.toFixed(2)
+                    });
+                }
+            });
+        }
+
+        function loadModel() {
+            const loader = new GLTFLoader();
+            loader.load(
+                'model/Agapanthus.glb',
+                (gltf) => {
+                    const model = gltf.scene;
+                    model.scale.set(1, 1, 1);
+                    model.position.set(0, 0, 0);
+                    scene.add(model);
+                    document.getElementById('loading').style.display = 'none';
+                },
+                (xhr) => {
+                    const percentComplete = (xhr.loaded / xhr.total) * 100;
+                    document.getElementById('progress').textContent = Math.round(percentComplete) + '%';
+                },
+                (error) => {
+                    console.error('An error happened while loading the model:', error);
+                }
+            );
+        }
+
+        function createHotspots() {
+            // Create a pulsing animation for hotspots
+            const hotspotGeometry = new THREE.SphereGeometry(0.1, 32, 32);
+            const hotspotMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x00ff00,  // Changed to green
+                transparent: true,
+                opacity: 0.8
+            });
+
+            // Add a glow effect
+            const glowGeometry = new THREE.SphereGeometry(0.12, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0x00ff00,
+                transparent: true,
+                opacity: 0.3
+            });
+
+            const hotspot1 = new THREE.Group();
+            const hotspotMesh1 = new THREE.Mesh(hotspotGeometry, hotspotMaterial.clone());
+            const glowMesh1 = new THREE.Mesh(glowGeometry, glowMaterial.clone());
+            hotspot1.add(hotspotMesh1);
+            hotspot1.add(glowMesh1);
+            hotspot1.position.set(1, 1, 0);
+            hotspot1.userData = {
+                title: "Flower Head",
+                description: "The distinctive spherical flower head of the Agapanthus, composed of multiple individual flowers."
+            };
+            scene.add(hotspot1);
+            hotspots.push(hotspot1);
+
+            const hotspot2 = new THREE.Group();
+            const hotspotMesh2 = new THREE.Mesh(hotspotGeometry, hotspotMaterial.clone());
+            const glowMesh2 = new THREE.Mesh(glowGeometry, glowMaterial.clone());
+            hotspot2.add(hotspotMesh2);
+            hotspot2.add(glowMesh2);
+            hotspot2.position.set(-1, 1, 0);
+            hotspot2.userData = {
+                title: "Stem Structure",
+                description: "The strong, thick stem that supports the flower head and helps the plant reach impressive heights."
+            };
+            scene.add(hotspot2);
+            hotspots.push(hotspot2);
+        }
+
+        function createInfoWindow() {
+            infoWindow = document.createElement('div');
+            infoWindow.style.position = 'absolute';
+            infoWindow.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+            infoWindow.style.color = 'white';
+            infoWindow.style.padding = '20px';
+            infoWindow.style.borderRadius = '10px';
+            infoWindow.style.display = 'none';
+            infoWindow.style.cursor = 'pointer';
+            infoWindow.style.maxWidth = '300px';
+            infoWindow.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+            infoWindow.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+            infoWindow.style.backdropFilter = 'blur(5px)';
+            
+            // Add transition effects
+            infoWindow.style.transition = 'opacity 0.3s ease-in-out';
+            
+            document.body.appendChild(infoWindow);
+        }
+
+        function updateInfoWindow(hotspot, x, y) {
+            infoWindow.innerHTML = `
+                <div style="position: relative;">
+                    <span id="closeButton" style="position: absolute; right: 10px; top: 0; cursor: pointer; 
+                                font-size: 24px; opacity: 0.7; transition: opacity 0.2s;"
+                          onmouseover="this.style.opacity=1" 
+                          onmouseout="this.style.opacity=0.7">×</span>
+                    <h3 style="margin: 0 0 10px 0; color: #4CAF50; font-size: 18px;">
+                        ${hotspot.userData.title}
+                    </h3>
+                    <p style="margin: 0; line-height: 1.5; font-size: 14px;">
+                        ${hotspot.userData.description}
+                    </p>
+                </div>
+            `;
+
+            // Add event listener to close button
+            document.getElementById('closeButton').addEventListener('click', (event) => {
+                event.stopPropagation();
+                closeInfoWindow();
+            });
+
+            // Add click outside listener
+            document.addEventListener('click', function onClickOutside(event) {
+                if (!infoWindow.contains(event.target)) {
+                    closeInfoWindow();
+                    document.removeEventListener('click', onClickOutside);
+                }
+            });
+        }
+
+        function closeInfoWindow() {
+            infoWindow.style.display = 'none';
+            moveCamera(DEFAULT_CAMERA_POSITION, DEFAULT_CAMERA_ROTATION);
+            currentHotspot = null;
+        }
+
+        function moveCamera(targetPosition, targetRotation, duration = 1500) {
+            if (isTransitioning) return;
+            isTransitioning = true;
+
+            const startPosition = camera.position.clone();
+            const startRotation = camera.rotation.clone();
+            const startTime = performance.now();
+
+            function update() {
+                const currentTime = performance.now();
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Improved easing function (cubic)
+                const eased = progress < .5 ? 
+                    4 * progress * progress * progress : 
+                    1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+                camera.position.lerpVectors(startPosition, targetPosition, eased);
+                
+                camera.rotation.x = THREE.MathUtils.lerp(startRotation.x, targetRotation.x, eased);
+                camera.rotation.y = THREE.MathUtils.lerp(startRotation.y, targetRotation.y, eased);
+                camera.rotation.z = THREE.MathUtils.lerp(startRotation.z, targetRotation.z, eased);
+
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                } else {
+                    isTransitioning = false;
+                }
+            }
+
+            update();
+        }
+
+        function onMouseClick(event) {
+            if (isTransitioning) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(hotspots, true);
+
+            if (intersects.length > 0) {
+                const hotspotGroup = intersects[0].object.parent;
+                currentHotspot = hotspotGroup;
+
+                let zoomDistance, offset;
+
+                // Special handling for Flower Head hotspot
+                if (hotspotGroup.userData.title === "Flower Head") {
+                    zoomDistance = 1.2; // Adjusted zoom distance for flower head
+                    offset = new THREE.Vector3(0.3, 0.2, 0.3); // Adjusted offset for better flower head view
+                } else {
+                    zoomDistance = 1.5; // Default zoom for other hotspots
+                    offset = new THREE.Vector3(0.3, 0.2, 0.3); // Default offset
+                }
+
+                const targetPosition = hotspotGroup.position.clone().add(offset);
+                
+                const targetRotation = new THREE.Euler();
+                const lookAtMatrix = new THREE.Matrix4();
+                lookAtMatrix.lookAt(targetPosition, hotspotGroup.position, new THREE.Vector3(0, 1, 0));
+                targetRotation.setFromRotationMatrix(lookAtMatrix);
+
+                moveCamera(targetPosition, targetRotation);
+
+                updateInfoWindow(hotspotGroup, event.clientX, event.clientY);
+                infoWindow.style.left = `${event.clientX}px`;
+                infoWindow.style.top = `${event.clientY}px`;
+                infoWindow.style.display = 'block';
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Pulse animation for hotspots
+            const time = Date.now() * 0.001;
+            hotspots.forEach(hotspot => {
+                hotspot.children[1].scale.setScalar(1 + Math.sin(time * 2) * 0.1);
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onWindowResize, false);
+        window.addEventListener('click', onMouseClick, false);
+
+        init();
+    </script>
+</body>
+</html>
